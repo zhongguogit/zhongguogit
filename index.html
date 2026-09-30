@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的第一个网站（也是 App）</title>
+  <!-- 这 3 行是"变成 App"的关键：manifest 让浏览器认识你的应用 -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="icon" href="icon-192.png">
+  <style>
+    /* ---- 以下是样式（CSS），控制页面长什么样 ---- */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f4f4fb;
+      color: #1f2430;
+      line-height: 1.7;
+      padding: 24px;
+    }
+    .card {
+      max-width: 680px;
+      margin: 0 auto 20px;
+      background: #fff;
+      border-radius: 14px;
+      padding: 28px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    }
+    h1 { font-size: 26px; color: #4f46e5; margin-bottom: 6px; }
+    h2 { font-size: 18px; margin: 18px 0 8px; color: #3730a3; }
+    p { margin-bottom: 10px; }
+    code {
+      background: #eef0ff;
+      color: #4338ca;
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+    button {
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-top: 6px;
+    }
+    button:active { background: #3730a3; }
+    ul { margin: 6px 0 10px 22px; }
+    li { margin-bottom: 4px; }
+    .badge {
+      display: inline-block;
+      background: #12b981;
+      color: #fff;
+      font-size: 13px;
+      border-radius: 20px;
+      padding: 2px 10px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .note {
+      background: #fffbeb;
+      border-left: 4px solid #f59e0b;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h1>我的第一个网站<span class="badge">也是 App</span></h1>
+    <p>这是一个"一个文件两用"的网页：它是网站，也是可以<strong>安装到手机/电脑桌面</strong>的 App。</p>
+    <p>技术名字叫 <strong>PWA</strong>（渐进式网页应用），核心就是"网页 + 一个清单文件 + 一个离线缓存脚本"，全程零费用。</p>
+
+    <h2>👆 先点一下试试（JavaScript 交互）</h2>
+    <p>点击次数：<strong id="count">0</strong></p>
+    <button onclick="addCount()">点我 +1</button>
+
+    <h2>📱 如何把它安装成 App</h2>
+    <ul>
+      <li><strong>手机 Chrome / 浏览器</strong>：打开页面 → 菜单（⋮）→「添加到主屏幕」/「安装应用」</li>
+      <li><strong>电脑 Chrome / Edge</strong>：地址栏右侧出现⊕图标 → 点击安装</li>
+      <li>安装后桌面上会出现图标，点开就是独立窗口，还能离线用。</li>
+    </ul>
+    <div class="note">注意：安装 App 功能需要网站跑在 <strong>https 或 localhost</strong> 上。本地双击打开能看网页、能点按钮，但"安装成 App"要用下面免费的托管方式上线后才行。</div>
+
+    <h2>🆓 免费托管（上线给别人用）</h2>
+    <ul>
+      <li><strong>GitHub Pages（推荐）</strong>：注册 GitHub 账号 → 新建仓库 → 把这 4 个文件上传 → 仓库 Settings → Pages → 选 main 分支 → 保存，几分钟后就能得到 https 网址。</li>
+      <li><strong>Gitee Pages</strong>：国内访问快，需实名认证。</li>
+      <li><strong>Cloudflare Pages</strong>：境外访问快，也是免费。</li>
+    </ul>
+
+    <h2>📖 代码怎么看（学习路线）</h2>
+    <ul>
+      <li><code>&lt;style&gt;</code> 里的内容是 <strong>CSS</strong>：控制颜色、字体、排版。</li>
+      <li><code>&lt;script&gt;</code> 里的内容是 <strong>JavaScript</strong>：让页面动起来（比如计数）。</li>
+      <li><code>manifest.json</code>：应用的"身份证"（名字、图标、窗口样式）。</li>
+      <li><code>sw.js</code>：离线和安装的"服务生"（缓存文件、支持安装）。</li>
+    </ul>
+  </div>
+
+  <script>
+    // ---- 以下是脚本（JavaScript），让页面"动"起来 ----
+    var times = 0;
+    function addCount() {
+      times = times + 1;
+      document.getElementById('count').textContent = times;
+    }
+
+    // 注册 service worker：只有 https 或 localhost 环境下才会成功
+    // 这行让网页具备"离线可用 + 可安装为 App"的能力
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+
+    // 监听浏览器的"可安装"事件，弹出安装按钮（可选增强）
+    var installPrompt = null;
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      installPrompt = e;
+      var btn = document.createElement('button');
+      btn.textContent = '安装为 App';
+      btn.onclick = function () { installPrompt.prompt(); };
+      document.querySelector('.card').appendChild(btn);
+    });
+  </script>
+</body>
+</html>
