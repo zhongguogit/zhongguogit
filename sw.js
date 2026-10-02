@@ -1,46 +1,37 @@
-// sw.js —— 离线缓存"服务生"
-// 作用：第一次访问时把页面文件存进浏览器缓存；之后即使断网，也能打开这个 App。
-// 学习要点：这里只有 3 个核心动作 —— install（安装缓存）、fetch（响应请求）、activate（激活）。
-
-var CACHE_NAME = 'my-app-v1';
-// 要缓存的文件清单（和 index.html 同目录）
-var CACHE_FILES = [
+const CACHE = 'drama-maker-v1';
+const ASSETS = [
   './',
-  './index.html',
+  './drama-maker.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
 ];
 
-// 1. 安装：把文件写入缓存
-self.addEventListener('install', function (event) {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(function (cache) {
-      return cache.addAll(CACHE_FILES);
-    })
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll(ASSETS)).catch(() => {})
   );
+  self.skipWaiting();
 });
 
-// 2. 请求拦截：优先用缓存，缓存没有再去网络
-self.addEventListener('fetch', function (event) {
-  event.respondWith(
-    caches.match(event.request).then(function (response) {
-      return response || fetch(event.request);
-    })
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    )
   );
+  self.clients.claim();
 });
 
-// 3. 激活：清理旧版本缓存（这里简单起见只保留当前版本）
-self.addEventListener('activate', function (event) {
-  event.waitUntil(
-    caches.keys().then(function (keys) {
-      return Promise.all(
-        keys.filter(function (key) {
-          return key !== CACHE_NAME;
-        }).map(function (key) {
-          return caches.delete(key);
-        })
-      );
-    })
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  e.respondWith(
+    caches.match(e.request).then(cached =>
+      cached || fetch(e.request).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+        return res;
+      }).catch(() => cached)
+    )
   );
 });
