@@ -1,5 +1,246 @@
 <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 短剧制作工具</title>
+<script src="https://js.puter.com/v2/"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    color: #e8e8e8;
+    min-height: 100vh;
+    padding: 12px;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  header { text-align: center; padding: 16px 0 20px; }
+  header h1 { font-size: 22px; background: linear-gradient(90deg, #e94560, #f39c12); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  header p { font-size: 12px; color: #888; margin-top: 4px; }
+  .card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .card h2 { font-size: 16px; margin-bottom: 10px; color: #f39c12; }
+  label { display: block; font-size: 13px; margin: 8px 0 4px; color: #bbb; }
+  input, textarea, select {
+    width: 100%;
+    padding: 10px 12px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  .btn {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(90deg, #e94560, #c23152);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 10px;
+  }
+  .btn.secondary { background: linear-gradient(90deg, #0f3460, #16213e); }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row > div { flex: 1; }
+  .status { font-size: 13px; color: #f39c12; margin-top: 8px; min-height: 18px; }
+  .result {
+    margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.25);
+    border-radius: 8px; font-size: 13px; line-height: 1.6;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  video, img { max-width: 100%; border-radius: 8px; margin-top: 10px; display: block; }
+  audio { width: 100%; margin-top: 10px; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; background: rgba(233,69,96,0.2); color: #e94560; border-radius: 10px; margin-left: 6px; }
+  .tip { font-size: 11px; color: #666; margin-top: 6px; }
+  .back-link { display: inline-block; color: #888; text-decoration: none; font-size: 13px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <a href="index.html" class="back-link">← 返回首页</a>
+  <header>
+    <h1>🎬 AI 短剧制作工具</h1>
+    <p>剧本 → 图片 → 视频 → 配音，一站式免费创作</p>
+  </header>
+
+  <div class="card">
+    <h2>📝 第一步：生成剧本 <span class="tag">免费</span></h2>
+    <label>短剧主题</label>
+    <input id="topic" value="霸总意外爱上外卖女孩">
+    <label>集数</label>
+    <select id="episodes">
+      <option value="1">1集</option>
+      <option value="3" selected>3集</option>
+      <option value="5">5集</option>
+    </select>
+    <button class="btn" onclick="generateScript()">✨ 用 AI 生成剧本</button>
+    <div class="status" id="scriptStatus"></div>
+    <div class="result" id="scriptResult" style="display:none;"></div>
+  </div>
+
+  <div class="card">
+    <h2>🖼️ 第二步：生成角色/场景图 <span class="tag">免费</span></h2>
+    <label>画面描述</label>
+    <textarea id="imgPrompt">一位穿着西装的帅气总裁，站在豪华办公室落地窗前，电影感光影，写实风格</textarea>
+    <button class="btn secondary" onclick="generateImage()">🎨 生成图片</button>
+    <div class="status" id="imgStatus"></div>
+    <div id="imgResult"></div>
+  </div>
+
+  <div class="card">
+    <h2>🎥 第三步：生成视频片段 <span class="tag">用户自付</span></h2>
+    <label>视频描述</label>
+    <textarea id="vidPrompt">年轻女孩提着外卖冲进写字楼，不小心撞到帅气总裁，外卖洒落一地，慢镜头，电影感</textarea>
+    <label>选择模型</label>
+    <select id="vidModel">
+      <option value="seedance-2-0">Seedance 2.0（即梦，带音频）</option>
+      <option value="veo-3.1">Veo 3.1（Google，带音频）</option>
+      <option value="veo-3.1-lite">Veo 3.1 Lite（测试首选）</option>
+      <option value="kling-2.1-standard">Kling 2.1（可灵）</option>
+      <option value="wan2.7-t2v">Wan 2.7（通义万相）</option>
+      <option value="pixverse-v5">PixVerse V5</option>
+      <option value="vidu-q1">Vidu Q1</option>
+    </select>
+    <div class="btn-row">
+      <div>
+        <label>比例</label>
+        <select id="vidSize">
+          <option value="720x1280">9:16 竖屏（推荐）</option>
+          <option value="1280x720">16:9 横屏</option>
+          <option value="1080x1920">9:16 高清竖屏</option>
+          <option value="1920x1080">16:9 高清横屏</option>
+        </select>
+      </div>
+      <div>
+        <label>时长</label>
+        <select id="vidSeconds">
+          <option value="4">4秒</option>
+          <option value="5" selected>5秒</option>
+          <option value="8">8秒</option>
+        </select>
+      </div>
+    </div>
+    <label>首帧图片URL（可选）</label>
+    <input id="vidRefImg" placeholder="粘贴图片链接，或留空">
+    <button class="btn" onclick="generateVideo()">🚀 生成视频</button>
+    <div class="status" id="vidStatus"></div>
+    <div id="vidResult"></div>
+    <p class="tip">💡 先用 Veo 3.1 Lite 测试，再选带音频模型</p>
+  </div>
+
+  <div class="card">
+    <h2>🔊 第四步：配音合成 <span class="tag">免费</span></h2>
+    <label>配音文案</label>
+    <textarea id="ttsText">大家好，欢迎观看这部短剧！</textarea>
+    <button class="btn secondary" onclick="generateSpeech()">🎙️ 生成配音</button>
+    <div class="status" id="ttsStatus"></div>
+    <div id="ttsResult"></div>
+  </div>
+
+  <div class="card" style="text-align:center; font-size:12px; color:#666;">
+    <p>🛡️ 由 Puter.js 驱动 | 开发者零成本 | 用户使用自有额度</p>
+    <p style="margin-top:4px;">首次使用会提示登录 Puter 账号，新用户有免费额度</p>
+  </div>
+</div>
+
+<script>
+async function generateScript() {
+  var topic = document.getElementById('topic').value.trim();
+  var eps = document.getElementById('episodes').value;
+  var status = document.getElementById('scriptStatus');
+  var result = document.getElementById('scriptResult');
+  if (!topic) { status.textContent = '请先输入主题'; return; }
+  status.textContent = '⏳ AI 正在创作剧本，请稍候...';
+  result.style.display = 'none';
+  try {
+    var prompt = '请为我创作一部中文竖屏短剧，主题：' + topic + '，共' + eps + '集。每集包含场景描述、镜头提示、人物台词，格式清晰。';
+    var response = await puter.ai.chat(prompt, { model: 'qwen/qwen3.8-max' });
+    result.textContent = response;
+    result.style.display = 'block';
+    status.textContent = '✅ 剧本生成完成！';
+  } catch (e) {
+    status.textContent = '❌ 错误：' + e.message;
+  }
+}
+
+async function generateImage() {
+  var prompt = document.getElementById('imgPrompt').value.trim();
+  var status = document.getElementById('imgStatus');
+  var result = document.getElementById('imgResult');
+  if (!prompt) { status.textContent = '请输入画面描述'; return; }
+  status.textContent = '⏳ 正在生成图片...';
+  result.innerHTML = '';
+  try {
+    var img = await puter.ai.txt2img(prompt);
+    result.appendChild(img);
+    if (img.src) {
+      var link = document.createElement('div');
+      link.style.cssText = 'margin-top:8px;font-size:12px;color:#888;word-break:break-all;';
+      link.textContent = '图片链接：' + img.src;
+      result.appendChild(link);
+    }
+    status.textContent = '✅ 图片生成完成！可复制链接用于视频首帧';
+  } catch (e) {
+    status.textContent = '❌ 错误：' + e.message;
+  }
+}
+
+async function generateVideo() {
+  var prompt = document.getElementById('vidPrompt').value.trim();
+  var model = document.getElementById('vidModel').value;
+  var size = document.getElementById('vidSize').value;
+  var seconds = parseInt(document.getElementById('vidSeconds').value);
+  var refImg = document.getElementById('vidRefImg').value.trim();
+  var status = document.getElementById('vidStatus');
+  var result = document.getElementById('vidResult');
+  if (!prompt) { status.textContent = '请输入视频描述'; return; }
+  status.textContent = '⏳ 视频生成中（通常30-120秒）...';
+  result.innerHTML = '';
+  try {
+    var options = { model: model, size: size, seconds: seconds };
+    if (refImg) options.input_reference = refImg;
+    var video = await puter.ai.txt2vid(prompt, options);
+    video.controls = true;
+    video.style.width = '100%';
+    result.appendChild(video);
+    status.textContent = '✅ 视频生成完成！';
+  } catch (e) {
+    status.textContent = '❌ 错误：' + e.message;
+  }
+}
+
+async function generateSpeech() {
+  var text = document.getElementById('ttsText').value.trim();
+  var status = document.getElementById('ttsStatus');
+  var result = document.getElementById('ttsResult');
+  if (!text) { status.textContent = '请输入配音文案'; return; }
+  status.textContent = '⏳ 正在合成语音...';
+  result.innerHTML = '';
+  try {
+    var audio = await puter.ai.txt2speech(text, { provider: 'elevenlabs', model: 'eleven_multilingual_v2' });
+    audio.controls = true;
+    result.appendChild(audio);
+    status.textContent = '✅ 配音生成完成！';
+  } catch (e) {
+    status.textContent = '❌ 错误：' + e.message;
+  }
+}
+</script>
+</body>
+</html>
+html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
