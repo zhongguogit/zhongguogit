@@ -279,6 +279,43 @@
     let supabase = null;
     let isAdmin = false;
 
+    // ===== 网络可靠性增强（解决 TypeError: Failed to fetch）=====
+    // 带重试的请求包装器：仅对网络层错误重试，业务错误（如RLS）不重试
+    async function withRetry(fn, retries = 3, baseDelay = 800) {
+      let lastErr;
+      for (let i = 0; i < retries; i++) {
+        try {
+          return await fn();
+        } catch (err) {
+          lastErr = err;
+          const m = (err && err.message) || '';
+          const isNetErr = m === 'Failed to fetch' || /NetworkError|net::|ETIMEDOUT/i.test(m);
+          if (isNetErr && i < retries - 1) {
+            await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, i)));
+            continue;
+          }
+          throw err;
+        }
+      }
+      throw lastErr;
+    }
+    // 把底层错误翻译成用户可读的提示
+    function formatError(error) {
+      const msg = error && error.message ? error.message : String(error);
+      if (/Failed to fetch|NetworkError|net::/i.test(msg)) {
+        return '网络连接失败：Supabase 免费项目可能已暂停（7天无活动自动暂停）。' +
+               '请前往 <a href="https://supabase.com/dashboard" target="_blank" rel="noopener">Supabase 控制台</a> 恢复项目，或稍后再试。';
+      }
+      return msg;
+    }
+    // 保活机制：页面打开期间每 5 分钟发一次轻量请求，防止项目被判定为不活动
+    function startKeepAlive() {
+      setInterval(() => {
+        fetch(SUPABASE_URL + '/rest/v1/', { headers: { apikey: SUPABASE_KEY } }).catch(() => {});
+      }, 5 * 60 * 1000);
+    }
+    // ==========================================================
+
     function initSupabase() {
       if (SUPABASE_URL.indexOf('你的项目ID') !== -1) {
         document.getElementById('setupNote').style.display = 'block';
@@ -294,10 +331,10 @@
       }
     }
 
-    // 显示消息
+    // 显示消息（使用 innerHTML 以支持错误提示中的链接）
     function showMsg(elId, text, type) {
       const el = document.getElementById(elId);
-      el.textContent = text;
+      el.innerHTML = text;
       el.className = type === 'error' ? 'error' : 'success';
     }
 
@@ -324,42 +361,50 @@
       const content = document.getElementById('guestContent').value.trim();
       if (!name || !content) { showMsg('guestMsg', '昵称和留言内容都不能为空', 'error'); return; }
 
-      const { error } = await supabase.from('messages').insert([{
-        visitor_id: getVisitorId(),
-        name: name,
-        content: content,
-        reply: ''
-      }]);
+      try {
+        const { error } = await withRetry(() => supabase.from('messages').insert([{
+          visitor_id: getVisitorId(),
+          name: name,
+          content: content,
+          reply: ''
+        }]));
 
-      if (error) {
-        showMsg('guestMsg', '提交失败：' + error.message, 'error');
-      } else {
-        showMsg('guestMsg', '留言成功！', 'success');
-        document.getElementById('guestContent').value = '';
-        loadMyMessages();
+        if (error) {
+          showMsg('guestMsg', '提交失败：' + formatError(error), 'error');
+        } else {
+          showMsg('guestMsg', '留言成功！', 'success');
+          document.getElementById('guestContent').value = '';
+          loadMyMessages();
+        }
+      } catch (e) {
+        showMsg('guestMsg', '提交失败：' + formatError(e), 'error');
       }
     }
 
     // 加载我的留言
     async function loadMyMessages() {
       if (!supabase) return;
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('visitor_id', getVisitorId())
-        .order('created_at', { ascending: false });
+      try {
+        const { data, error } = await withRetry(() => supabase
+          .from('messages')
+          .select('*')
+          .eq('visitor_id', getVisitorId())
+          .order('created_at', { ascending: false }));
 
-      const el = document.getElementById('myMessages');
-      if (error) { el.innerHTML = '<div class="error">加载失败：' + error.message + '</div>'; return; }
-      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无留言，写一条吧</div>'; return; }
+        const el = document.getElementById('myMessages');
+        if (error) { el.innerHTML = '<div class="error">加载失败：' + formatError(error) + '</div>'; return; }
+        if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无留言，写一条吧</div>'; return; }
 
-      el.innerHTML = data.map(m => `
-        <div class="msg-item">
-          <div class="meta">${m.name} · ${m.created_at ? m.created_at.slice(0,10) : '刚刚'}</div>
-          <div class="content">${escapeHtml(m.content)}</div>
-          ${m.reply ? `<div class="reply"><div class="reply-label">博主回复</div>${escapeHtml(m.reply)}</div>` : ''}
-        </div>
-      `).join('');
+        el.innerHTML = data.map(m => `
+          <div class="msg-item">
+            <div class="meta">${m.name} · ${m.created_at ? m.created_at.slice(0,10) : '刚刚'}</div>
+            <div class="content">${escapeHtml(m.content)}</div>
+            ${m.reply ? `<div class="reply"><div class="reply-label">博主回复</div>${escapeHtml(m.reply)}</div>` : ''}
+          </div>
+        `).join('');
+      } catch (e) {
+        document.getElementById('myMessages').innerHTML = '<div class="error">加载失败：' + formatError(e) + '</div>';
+      }
     }
 
     // 管理员登录
@@ -378,29 +423,33 @@
     // 加载所有留言（管理员）
     async function loadAllMessages() {
       if (!supabase) return;
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .order('created_at', { ascending: false });
+      try {
+        const { data, error } = await withRetry(() => supabase
+          .from('messages')
+          .select('*')
+          .order('created_at', { ascending: false }));
 
-      const el = document.getElementById('allMessages');
-      if (error) { el.innerHTML = '<div class="error">加载失败：' + error.message + '</div>'; return; }
-      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无留言</div>'; return; }
+        const el = document.getElementById('allMessages');
+        if (error) { el.innerHTML = '<div class="error">加载失败：' + formatError(error) + '</div>'; return; }
+        if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无留言</div>'; return; }
 
-      el.innerHTML = data.map((m, idx) => `
-        <div class="msg-item">
-          <div class="meta">${m.name} · ${m.created_at ? m.created_at.slice(0,10) : '刚刚'}</div>
-          <div class="content">${escapeHtml(m.content)}</div>
-          ${m.reply ? `<div class="reply"><div class="reply-label">回复</div>${escapeHtml(m.reply)}</div>` : ''}
-          <div style="margin-top:10px;">
-            <button class="secondary" onclick="toggleReply(${idx}, ${m.id})">回复</button>
+        el.innerHTML = data.map((m, idx) => `
+          <div class="msg-item">
+            <div class="meta">${m.name} · ${m.created_at ? m.created_at.slice(0,10) : '刚刚'}</div>
+            <div class="content">${escapeHtml(m.content)}</div>
+            ${m.reply ? `<div class="reply"><div class="reply-label">回复</div>${escapeHtml(m.reply)}</div>` : ''}
+            <div style="margin-top:10px;">
+              <button class="secondary" onclick="toggleReply(${idx}, ${m.id})">回复</button>
+            </div>
+            <div class="reply-box" id="replyBox_${idx}">
+              <textarea id="replyText_${idx}" placeholder="输入回复...">${m.reply || ''}</textarea>
+              <button onclick="saveReply(${m.id}, ${idx})">保存回复</button>
+            </div>
           </div>
-          <div class="reply-box" id="replyBox_${idx}">
-            <textarea id="replyText_${idx}" placeholder="输入回复...">${m.reply || ''}</textarea>
-            <button onclick="saveReply(${m.id}, ${idx})">保存回复</button>
-          </div>
-        </div>
-      `).join('');
+        `).join('');
+      } catch (e) {
+        document.getElementById('allMessages').innerHTML = '<div class="error">加载失败：' + formatError(e) + '</div>';
+      }
     }
 
     // 切换回复框
@@ -413,12 +462,16 @@
     async function saveReply(id, idx) {
       if (!supabase) return;
       const text = document.getElementById('replyText_' + idx).value.trim();
-      const { error } = await supabase.from('messages').update({ reply: text }).eq('id', id);
-      if (error) {
-        alert('保存失败：' + error.message);
-      } else {
-        alert('回复已保存');
-        loadAllMessages();
+      try {
+        const { error } = await withRetry(() => supabase.from('messages').update({ reply: text }).eq('id', id));
+        if (error) {
+          alert('保存失败：' + (error.message || String(error)));
+        } else {
+          alert('回复已保存');
+          loadAllMessages();
+        }
+      } catch (e) {
+        alert('保存失败：网络异常（Supabase 可能已暂停），请稍后重试或前往 Supabase 控制台恢复。');
       }
     }
 
@@ -433,6 +486,7 @@
     window.onload = function() {
       if (initSupabase()) {
         loadMyMessages();
+        startKeepAlive();
       }
     };
   </script>
