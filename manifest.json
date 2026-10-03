@@ -1,25 +1,25 @@
 {
-  "name": "AI 短剧制作工具",
-  "short_name": "短剧制作",
-  "description": "AI 驱动的短剧制作工具，剧本、图片、视频、配音一站式创作",
-  "start_url": "drama-maker.html",
+  "name": "我的第一个网站",
+  "short_name": "我的App",
+  "description": "一个文件两用：既是网站，也是可安装到桌面的 App（零基础学习示例）",
+  "lang": "zh-CN",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#1a1a2e",
-  "theme_color": "#1a1a2e",
+  "background_color": "#f4f4fb",
+  "theme_color": "#4f46e5",
   "icons": [
     {
       "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }

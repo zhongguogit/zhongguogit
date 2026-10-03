@@ -25,6 +25,25 @@
     header h1 { font-size: 26px; color: #4f46e5; }
     header p { color: #7f8c9b; font-size: 14px; margin-top: 6px; }
 
+    .app-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 16px;
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      border-radius: 30px;
+      text-decoration: none;
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .app-link:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(79, 70, 229, 0.45); }
+    .app-link:active { transform: translateY(0); }
+    .app-link .arrow { font-size: 14px; }
+
     .card {
       background: #fff;
       border-radius: 12px;
@@ -121,13 +140,19 @@
     }
 
     .admin-bar {
-      background: #fef3c7;
-      border: 1px solid #fbbf24;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
       border-radius: 10px;
-      padding: 14px;
-      margin-bottom: 16px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
       font-size: 14px;
-      color: #92400e;
+      color: #991b1b;
+    }
+    .admin-bar input {
+      margin: 0;
+      padding: 6px 10px;
+      font-size: 14px;
+      width: auto;
     }
 
     .empty { text-align: center; color: #9ca3af; padding: 30px; }
@@ -172,6 +197,7 @@
     <header>
       <h1>私密留言板</h1>
       <p>只有你和博主能看到 · 换浏览器或清缓存会丢失历史记录</p>
+      <a class="app-link" href="drama-maker.html">🎬 Ai短剧制作工具app <span class="arrow">→</span></a>
     </header>
 
     <!-- 配置提示（首次使用显示） -->
