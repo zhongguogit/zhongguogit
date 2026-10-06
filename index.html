@@ -92,7 +92,7 @@
 </div>
 
 <script>
-const SUPABASE_URL='https://quiet-cake-8369.3923833208.workers.dev';
+const SUPABASE_URL='https://quiet-cake-8369.3923833208.workers.dev';const SUPABASE_DIRECT='https://dnqswjrevffwdcksnwan.supabase.co';
 const SUPABASE_KEY='sb_publishable_O23O8vd8DYWDBoydPjl9LA_uYGspSHC';
 const ADMIN_PASSWORD='admin123';
 let sb=null;
@@ -242,7 +242,8 @@ function deleteMsg(id){
 }
 
 // 初始化
-sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{fetch:_fetch});
+const _ff=async(u,o)=>{try{return await _fetch(u,o)}catch(e){if(u.indexOf('workers.dev')>-1)return _fetch(u.replace(SUPABASE_URL,SUPABASE_DIRECT),o);throw e}};
+sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{fetch:_ff});
 loadMyMessages();
 startKeepAlive();
 </script>
