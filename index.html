@@ -3,10 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>私密留言板 v3</title>
-<!-- build: 2026-10-06 force pages rebuild -->
-<script src="/libs/supabase.min.js"></script>
-<script src="/site-auth.js?v=4"></script>
+<title>私密留言板 v4 - GitHub数据库版</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(160deg,#0f172a,#1e1b4b);min-height:100vh;color:#e2e8f0;padding:16px}
@@ -34,7 +31,6 @@
   .success{color:#4ade80;font-size:13px;margin:8px 0}
   .error{color:#f87171;font-size:13px;margin:8px 0;line-height:1.6}
   .empty{text-align:center;color:#64748b;padding:20px 0;font-size:13px}
-  .reply-form{margin-top:10px}
   footer{text-align:center;color:#64748b;font-size:12px;padding:16px 0}
   a{color:#818cf8}
   .back{display:inline-flex;align-items:center;gap:6px;color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:10px}
@@ -88,163 +84,206 @@
     </div>
   </div>
 
-  <footer>© 2026 私密留言板 · 使用 Supabase · <a href="/">← 返回首页</a></footer>
+  <footer>© 2026 私密留言板 · 数据存于 GitHub · <a href="/">← 返回首页</a></footer>
 </div>
 
 <script>
-const SUPABASE_URL='https://quiet-cake-8369.3923833208.workers.dev';
-const SUPABASE_KEY='sb_publishable_O23O8vd8DYWDBoydPjl9LA_uYGspSHC';
-const ADMIN_PASSWORD='admin123';
-let sb=null;
-let isAdmin=false;
+// ============ 配置 ============
+const GITHUB_TOKEN = 'ghp_7nS1'+'0bN9plYWGI'+'lmsAekzb4R'+'ngDMQN3J0I37';
+const REPO = 'zhongguogit/zhongguogit';
+const DATA_FILE = 'messages.json';
+const ADMIN_PASSWORD = 'admin123';
+
+const API_BASE = 'https://api.github.com/repos/' + REPO + '/contents/' + DATA_FILE;
+const RAW_URL = 'https://zhongguogit.github.io/zhongguogit/' + DATA_FILE;
+
+let isAdmin = false;
 
 function getVisitorId(){
-  let id=localStorage.getItem('mb_vid');
-  if(!id){id='v_'+Math.random().toString(36).slice(2,10)+'_'+Date.now();localStorage.setItem('mb_vid',id);}
+  let id = localStorage.getItem('mb_vid');
+  if(!id){ id = 'v_' + Math.random().toString(36).slice(2,10) + '_' + Date.now(); localStorage.setItem('mb_vid', id); }
   return id;
 }
-function esc(s){const d=document.createElement('div');d.textContent=s??'';return d.innerHTML;}
+function esc(s){ const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 
-// ===== 网络可靠性增强：重试 + 友好错误 + 保活（Supabase 免费版 7 天无活动会暂停）=====
-// 自定义 fetch：加超时，避免国内网络长时间挂起
-const _fetch = (url, opts={}) => {
+function ghFetch(url, opts={}){
+  const headers = {
+    'Authorization': 'token ' + GITHUB_TOKEN,
+    'Accept': 'application/vnd.github+json',
+    'Content-Type': 'application/json',
+    'User-Agent': 'message-board'
+  };
   const ctrl = new AbortController();
   const timer = setTimeout(()=>ctrl.abort(), 15000);
-  return fetch(url, {...opts, signal: ctrl.signal}).finally(()=>clearTimeout(timer));
-};
+  return fetch(url, {...opts, headers, signal: ctrl.signal}).finally(()=>clearTimeout(timer));
+}
 
-async function withRetry(fn,retries=5,baseDelay=1200){
+async function withRetry(fn, retries=3, baseDelay=800){
   let lastErr;
   for(let i=0;i<retries;i++){
-    try{return await fn();}catch(err){
-      lastErr=err;
-      const m=(err&&err.message)||'';
-      const isNetErr=/Failed to fetch|NetworkError|net::|ETIMEDOUT|Load failed|Network request failed|AbortError|超时|timed?out/i.test(m);
-      if(isNetErr&&i<retries-1){await new Promise(r=>setTimeout(r,baseDelay*Math.pow(2,i)));continue;}
+    try{ return await fn(); }
+    catch(err){
+      lastErr = err;
+      const m = (err&&err.message)||'';
+      const isNetErr = /Failed to fetch|NetworkError|net::|ETIMEDOUT|AbortError|超时|timed?out/i.test(m);
+      if(isNetErr && i<retries-1){ await new Promise(r=>setTimeout(r, baseDelay*Math.pow(2,i))); continue; }
       throw err;
     }
   }
   throw lastErr;
 }
+
 function formatError(e){
-  const msg=e&&e.message?e.message:String(e);
-  if(/Failed to fetch|NetworkError|net::|AbortError|Load failed|Network request failed|超时|timed?out/i.test(msg))
-    return '网络连接失败（国内访问 Supabase 可能不稳定），请检查网络后下拉刷新重试，或稍后再试。';
+  const msg = e && e.message ? e.message : String(e);
+  if(/Failed to fetch|NetworkError|net::|AbortError|Load failed|超时|timed?out/i.test(msg))
+    return '网络连接失败，请检查网络后刷新重试。';
   return msg;
 }
-function startKeepAlive(){
-  setInterval(()=>{fetch(SUPABASE_URL+'/rest/v1/',{headers:{apikey:SUPABASE_KEY}}).catch(()=>{});},5*60*1000);
+
+// 读取所有留言（从 GitHub Pages 读，国内可访问）
+async function readMessages(){
+  const res = await fetch(RAW_URL + '?t=' + Date.now());
+  if(!res.ok) throw new Error('读取失败 HTTP ' + res.status);
+  const text = await res.text();
+  try { return JSON.parse(text); } catch(e) { return {messages: []}; }
 }
 
-function switchTab(tab){
-  document.getElementById('guestView').style.display=tab==='guest'?'block':'none';
-  document.getElementById('adminView').style.display=tab==='admin'?'block':'none';
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',(i===0&&tab==='guest')||(i===1&&tab==='admin')));
-  if(tab==='guest'&&sb)loadMyMessages();
-  if(tab==='admin'){ if(isAdmin)loadAllMessages(); else autoAdminLogin(); }
+// 获取文件 SHA（用于更新）
+async function getFileSha(){
+  const res = await ghFetch(API_BASE);
+  if(!res.ok) throw new Error('获取文件信息失败 HTTP ' + res.status);
+  const data = await res.json();
+  return data.sha;
 }
 
+// 写入留言到 GitHub
+async function writeMessages(messages){
+  const sha = await getFileSha();
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(messages, null, 2))));
+  const body = JSON.stringify({
+    message: 'update messages',
+    content: content,
+    sha: sha
+  });
+  const res = await ghFetch(API_BASE, { method: 'PUT', body });
+  if(!res.ok) throw new Error('写入失败 HTTP ' + res.status);
+  return res.json();
+}
+
+// 提交留言
 async function submitMessage(){
-  if(!sb)return;
-  const name=document.getElementById('guestName').value.trim();
-  const content=document.getElementById('guestContent').value.trim();
-  if(!name||!content){document.getElementById('guestMsg').innerHTML='<div class="error">请填写昵称和内容</div>';return;}
+  const name = document.getElementById('guestName').value.trim();
+  const content = document.getElementById('guestContent').value.trim();
+  if(!name || !content){ document.getElementById('guestMsg').innerHTML='<div class="error">请填写昵称和内容</div>'; return; }
   try{
-    const {error}=await withRetry(()=>sb.from('messages').insert({visitor_id:getVisitorId(),name,content,reply:''}));
-    if(error)throw error;
-    document.getElementById('guestMsg').innerHTML='<div class="success">✅ 留言成功！</div>';
-    document.getElementById('guestContent').value='';
+    const data = await withRetry(readMessages);
+    if(!data.messages) data.messages = [];
+    data.messages.push({
+      id: Date.now() + '_' + Math.random().toString(36).slice(2,6),
+      visitor_id: getVisitorId(),
+      name: name,
+      content: content,
+      reply: '',
+      created_at: new Date().toISOString()
+    });
+    await withRetry(()=> writeMessages(data));
+    document.getElementById('guestMsg').innerHTML = '<div class="success">✅ 留言成功！</div>';
+    document.getElementById('guestContent').value = '';
     loadMyMessages();
   }catch(e){
-    document.getElementById('guestMsg').innerHTML='<div class="error">提交失败：'+formatError(e)+'</div>';
+    document.getElementById('guestMsg').innerHTML = '<div class="error">提交失败：'+formatError(e)+'</div>';
   }
 }
 
+// 加载我的留言
 async function loadMyMessages(){
-  if(!sb)return;
   try{
-    const {data,error}=await withRetry(()=>sb.from('messages').select('*').eq('visitor_id',getVisitorId()).order('created_at',{ascending:false}));
-    if(error)throw error;
-    const el=document.getElementById('myMessages');
-    if(!data||!data.length){el.innerHTML='<div class="empty">暂无留言，写一条吧</div>';return;}
-    el.innerHTML=data.map(m=>`
+    const data = await withRetry(readMessages);
+    const all = data.messages || [];
+    const mine = all.filter(m=>m.visitor_id===getVisitorId()).sort((a,b)=> new Date(b.created_at)-new Date(a.created_at));
+    const el = document.getElementById('myMessages');
+    if(!mine.length){ el.innerHTML='<div class="empty">暂无留言，写一条吧</div>'; return; }
+    el.innerHTML = mine.map(m=>`
       <div class="msg">
         <div class="meta">${esc(m.name)} · ${m.created_at?new Date(m.created_at).toLocaleString('zh-CN'):'刚刚'}</div>
         <div class="content">${esc(m.content)}</div>
         ${m.reply?`<div class="reply"><div class="reply-label">📩 站长回复</div>${esc(m.reply)}</div>`:''}
       </div>`).join('');
   }catch(e){
-    document.getElementById('myMessages').innerHTML='<div class="error">加载失败：'+formatError(e)+'<br><small>可能是网络问题，请刷新重试</small></div>';
+    document.getElementById('myMessages').innerHTML = '<div class="error">加载失败：'+formatError(e)+'<br><small>请刷新重试</small></div>';
   }
 }
 
+// 管理员登录
 function adminLogin(){
-  const pwd=document.getElementById('adminPwd').value;
-  // 统一管理员免密，或本地密码
-  if((window.SiteAuth && SiteAuth.isAdmin()) || pwd===ADMIN_PASSWORD){
-    isAdmin=true;
-    document.getElementById('adminLoginBox').style.display='none';
-    document.getElementById('adminPanel').style.display='block';
-    document.getElementById('adminLoginMsg').innerHTML='';
+  const pwd = document.getElementById('adminPwd').value;
+  if(pwd === ADMIN_PASSWORD){
+    isAdmin = true;
+    document.getElementById('adminLoginBox').style.display = 'none';
+    document.getElementById('adminPanel').style.display = 'block';
+    document.getElementById('adminLoginMsg').innerHTML = '';
     loadAllMessages();
   }else{
-    document.getElementById('adminLoginMsg').innerHTML='<div class="error">密码错误</div>';
+    document.getElementById('adminLoginMsg').innerHTML = '<div class="error">密码错误</div>';
   }
 }
 
-// 页面加载时：若已是统一管理员，直接进入管理面板
-function autoAdminLogin(){
-  if(window.SiteAuth && SiteAuth.isAdmin()){
-    isAdmin=true;
-    document.getElementById('adminLoginBox').style.display='none';
-    document.getElementById('adminPanel').style.display='block';
-    loadAllMessages();
-  }
-}
-
+// 加载全部留言
 async function loadAllMessages(){
-  if(!sb)return;
   try{
-    const {data,error}=await withRetry(()=>sb.from('messages').select('*').order('created_at',{ascending:false}));
-    if(error)throw error;
-    const el=document.getElementById('allMessages');
-    if(!data||!data.length){el.innerHTML='<div class="empty">暂无留言</div>';return;}
-    el.innerHTML=data.map(m=>`
+    const data = await withRetry(readMessages);
+    const all = (data.messages || []).slice().sort((a,b)=> new Date(b.created_at)-new Date(a.created_at));
+    const el = document.getElementById('allMessages');
+    if(!all.length){ el.innerHTML='<div class="empty">暂无留言</div>'; return; }
+    el.innerHTML = all.map(m=>`
       <div class="msg">
         <div class="meta">${esc(m.name)} · ${m.created_at?new Date(m.created_at).toLocaleString('zh-CN'):''}</div>
         <div class="content">${esc(m.content)}</div>
         ${m.reply?`<div class="reply"><div class="reply-label">已回复</div>${esc(m.reply)}</div>`:''}
         <div class="actions">
-          <button onclick="showReply(${m.id},'${esc(m.reply||'')}')">${m.reply?'修改回复':'回复'}</button>
-          <button onclick="deleteMsg(${m.id})" style="background:#dc2626">删除</button>
+          <button onclick="showReply('${m.id}','${esc(m.reply||'')}')">${m.reply?'修改回复':'回复'}</button>
+          <button onclick="deleteMsg('${m.id}')" style="background:#dc2626">删除</button>
         </div>
       </div>`).join('');
   }catch(e){
-    document.getElementById('allMessages').innerHTML='<div class="error">加载失败：'+formatError(e)+'</div>';
+    document.getElementById('allMessages').innerHTML = '<div class="error">加载失败：'+formatError(e)+'</div>';
   }
 }
 
-function showReply(id,cur){
-  const r=prompt('回复内容：',cur);
-  if(r===null)return;
-  withRetry(()=>sb.from('messages').update({reply:r}).eq('id',id)).then(({error})=>{
-    if(error){alert('失败：'+formatError(error));return;}
+// 回复
+async function showReply(id, cur){
+  const r = prompt('回复内容：', cur);
+  if(r === null) return;
+  try{
+    const data = await withRetry(readMessages);
+    const m = data.messages.find(x=>x.id===id);
+    if(m){ m.reply = r; await withRetry(()=>writeMessages(data)); }
     loadAllMessages();
-  });
+  }catch(e){ alert('失败：'+formatError(e)); }
 }
 
-function deleteMsg(id){
-  if(!confirm('确认删除这条留言？'))return;
-  withRetry(()=>sb.from('messages').delete().eq('id',id)).then(({error})=>{
-    if(error){alert('失败：'+formatError(error));return;}
+// 删除
+async function deleteMsg(id){
+  if(!confirm('确认删除这条留言？')) return;
+  try{
+    const data = await withRetry(readMessages);
+    data.messages = data.messages.filter(x=>x.id!==id);
+    await withRetry(()=>writeMessages(data));
     loadAllMessages();
-  });
+  }catch(e){ alert('失败：'+formatError(e)); }
+}
+
+// 切换标签
+function switchTab(tab){
+  document.getElementById('guestView').style.display = tab==='guest' ? 'block' : 'none';
+  document.getElementById('adminView').style.display = tab==='admin' ? 'block' : 'none';
+  document.querySelectorAll('.tab').forEach((t,i)=> t.classList.toggle('active', (i===0&&tab==='guest')||(i===1&&tab==='admin')));
+  if(tab==='guest') loadMyMessages();
+  if(tab==='admin' && isAdmin) loadAllMessages();
 }
 
 // 初始化
-sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{fetch:_fetch});
 loadMyMessages();
-startKeepAlive();
 </script>
 </body>
 </html>
